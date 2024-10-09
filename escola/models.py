@@ -2,6 +2,31 @@
 
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.db import models
+from django.forms import ValidationError
+from django.utils import timezone
+
+class CalendarioEscolar(models.Model):
+    ano = models.PositiveIntegerField()
+    inicio_ano_letivo = models.DateField()
+    fim_ano_letivo = models.DateField()
+    feriados = models.JSONField(help_text="Lista de feriados no formato ['YYYY-MM-DD', 'YYYY-MM-DD', ...]")
+    ferias_inicio = models.DateField()
+    ferias_fim = models.DateField()
+
+    def __str__(self):
+        return f"Calendário Escolar {self.ano}"
+
+    def is_data_permitida(self, data):
+        # Verifica se a data está dentro do ano letivo, fora do período de férias e não é feriado
+        if not (self.inicio_ano_letivo <= data <= self.fim_ano_letivo):
+            return False  # Fora do ano letivo
+        if self.ferias_inicio <= data <= self.ferias_fim:
+            return False  # Durante as férias
+        if data.strftime('%Y-%m-%d') in self.feriados:
+            return False  # Feriado
+        return True  # Data permitida
+
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, username, email, password=None, user_type=4, **extra_fields):
@@ -42,6 +67,7 @@ class Escola(models.Model):
     endereco = models.CharField(max_length=255)
     tipo = models.CharField(max_length=50, choices=ESCOLA_TIPO_CHOICES)
     diretor = models.OneToOneField('Diretor', on_delete=models.SET_NULL, null=True, blank=True, related_name='escola_diretor')
+    calendario_escolar = models.OneToOneField(CalendarioEscolar, on_delete=models.SET_NULL, null=True, blank=True)
 
 class Diretor(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
@@ -99,12 +125,20 @@ class Turma(models.Model):
         return self.alunos.count()
 
 class RegistroAula(models.Model):
-    disciplina = models.ForeignKey(Disciplina, on_delete=models.CASCADE, related_name='registro_aulas')
+    disciplina = models.ForeignKey(Disciplina, on_delete=models.CASCADE)
     data = models.DateField()
     conteudo = models.TextField()
 
+    def clean(self):
+        # Verifica se a data da aula é permitida pelo calendário da escola
+        escola = self.disciplina.turma.escola
+        if escola and escola.calendario_escolar:
+            if not escola.calendario_escolar.is_data_permitida(self.data):
+                raise ValidationError("A data da aula está em um período não permitido (feriado ou férias).")
+    
     def __str__(self):
-        return f"Aula de {self.disciplina.nome} em {self.data}"
+        return f"Aula de {self.disciplina} em {self.data}"
+
 
 class RegistroFalta(models.Model):
     aluno = models.ForeignKey(Aluno, on_delete=models.CASCADE, related_name='registro_faltas')
