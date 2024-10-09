@@ -17,3 +17,5 @@ Como modulos administradores temos:
 * Super Entendente de Educação Municipal
 * Diretor de Escola
 * Controle Academico da Escola
+* Painel do Professor 
+* Painel do Aluno
